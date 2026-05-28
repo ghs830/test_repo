@@ -1,0 +1,4 @@
+coverage/
+.claude/
+node_modules/
+reports/
