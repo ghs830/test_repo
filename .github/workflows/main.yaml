@@ -7,7 +7,6 @@ on:
       - main
       - features/**
       - dependabot/**
-
   pull_request:
     branches:
       - main
@@ -16,20 +15,30 @@ on:
 jobs:
   code-validation:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Use Node.JS
+      - name: Use Node.js
         uses: actions/setup-node@v4
         with:
           node-version: "22.4.1"
+          cache: "npm"
 
       - name: Install dependencies
         run: npm i
 
       - name: Run tests
         run: ./node_modules/.bin/jest --coverage
+
+      - name: Save PR metadata
+        if: github.event_name == 'pull_request'
+        run: |
+          echo "PR_NUMBER=${{ github.event.pull_request.number }}" >> pr-meta.env
+          echo "PR_BRANCH=${{ github.event.pull_request.head.ref }}" >> pr-meta.env
+          echo "PR_BASE=${{ github.event.pull_request.base.ref }}" >> pr-meta.env
+          echo "PR_SHA=${{ github.event.pull_request.head.sha }}" >> pr-meta.env
 
       - name: Upload test artifacts
         uses: actions/upload-artifact@v4
@@ -38,10 +47,18 @@ jobs:
           path: |
             reports/test-report.xml
             coverage/
+            pr-meta.env
 
   sonar-scan:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     needs: code-validation
+    # Tourne sur push main ET sur PR de votre repo
+    # Les PR de fork sont gérées par sonar-fork.yml
+    if: |
+      github.event_name == 'push' ||
+      (github.event_name == 'pull_request' &&
+       github.event.pull_request.head.repo.full_name == github.repository)
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -52,18 +69,25 @@ jobs:
           name: test-artifacts
           path: ./
 
-      - name: Wake up Sonarqube
+      - name: Load PR metadata
+        run: |
+          if [ -f pr-meta.env ]; then
+            cat pr-meta.env >> $GITHUB_ENV
+          fi
+
+      - name: Wake up SonarQube
         uses: kelyanselme/kelyan_workflows_and_actions/.github/actions/wakeup-sonar@v1
         with:
           sonar_instance_url: ${{ secrets.SONAR_URL }}
 
       - name: SonarQube Scan
-        continue-on-error: false
-        uses: sonarsource/sonarqube-scan-action@master
+        uses: sonarsource/sonarqube-scan-action@v5
         with:
           args: >
-            -Dsonar.qualitygate.wait=true -Dsonar.projectKey=test
+            -Dsonar.qualitygate.wait=true
+            -Dsonar.projectKey=test
             -Dsonar.projectName=test
+            ${{ env.PR_NUMBER != '' && format('-Dsonar.scm.revision={0} -Dsonar.pullrequest.key={1} -Dsonar.pullrequest.branch={2} -Dsonar.pullrequest.base={3}', env.PR_SHA, env.PR_NUMBER, env.PR_BRANCH, env.PR_BASE) || '' }}
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
           SONAR_HOST_URL: ${{ secrets.SONAR_URL }}
