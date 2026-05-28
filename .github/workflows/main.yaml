@@ -36,7 +36,7 @@ jobs:
         if: github.event_name == 'pull_request'
         run: |
           echo "PR_NUMBER=${{ github.event.pull_request.number }}" >> pr-meta.env
-          echo "PR_BRANCH=${{ github.event.pull_request.head.ref }}" >> pr-meta.env
+          echo "PR_BRANCH=${{ github.event.pull_request.head.repo.owner.login }}:${{ github.event.pull_request.head.ref }}" >> pr-meta.env
           echo "PR_BASE=${{ github.event.pull_request.base.ref }}" >> pr-meta.env
           echo "PR_SHA=${{ github.event.pull_request.head.sha }}" >> pr-meta.env
 
